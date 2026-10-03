@@ -1,3 +1,10 @@
+import {
+  GPUMesh,
+  Material,
+  loadGLTF,
+  createTexturedCubeImage
+} from "./arlun-assets.js";
+
 const canvas = document.querySelector("#game");
 const status = document.querySelector("#status");
 
@@ -12,26 +19,69 @@ if (!gl) {
   throw new Error("ARlun Web Runtime requires WebGL2");
 }
 
-const vertexSource =
-  "#version 300 es\n" +
-  "precision highp float;\n" +
-  "layout(location=0) in vec3 aPosition;\n" +
-  "layout(location=1) in vec3 aNormal;\n" +
-  "layout(location=2) in vec3 aColor;\n" +
-  "uniform mat4 uModel;\n" +
-  "uniform mat4 uView;\n" +
-  "uniform mat4 uProjection;\n" +
-  "uniform mat3 uNormalMatrix;\n" +
-  "out vec3 vNormal; out vec3 vWorldPosition; out vec3 vColor;\n" +
-  "void main(){ vec4 world=uModel*vec4(aPosition,1.0); vWorldPosition=world.xyz; vNormal=normalize(uNormalMatrix*aNormal); vColor=aColor; gl_Position=uProjection*uView*world; }";
+const vertexSource = [
+  "#version 300 es",
+  "precision highp float;",
+  "layout(location=0) in vec3 aPosition;",
+  "layout(location=1) in vec3 aNormal;",
+  "layout(location=2) in vec2 aUV;",
+  "layout(location=3) in vec3 aColor;",
+  "uniform mat4 uModel;",
+  "uniform mat4 uView;",
+  "uniform mat4 uProjection;",
+  "uniform mat3 uNormalMatrix;",
+  "out vec3 vNormal;",
+  "out vec3 vWorldPosition;",
+  "out vec2 vUV;",
+  "out vec3 vColor;",
+  "void main(){",
+  "  vec4 world=uModel*vec4(aPosition,1.0);",
+  "  vWorldPosition=world.xyz;",
+  "  vNormal=normalize(uNormalMatrix*aNormal);",
+  "  vUV=aUV;",
+  "  vColor=aColor;",
+  "  gl_Position=uProjection*uView*world;",
+  "}"
+].join("\n");
 
-const fragmentSource =
-  "#version 300 es\n" +
-  "precision highp float;\n" +
-  "in vec3 vNormal; in vec3 vWorldPosition; in vec3 vColor;\n" +
-  "uniform vec3 uCameraPosition; uniform vec3 uLightDirection; uniform vec3 uLightColor; uniform vec3 uAmbientColor; uniform float uLightIntensity;\n" +
-  "out vec4 outColor;\n" +
-  "void main(){ vec3 N=normalize(vNormal); vec3 L=normalize(-uLightDirection); float diffuse=max(dot(N,L),0.0); vec3 V=normalize(uCameraPosition-vWorldPosition); vec3 H=normalize(L+V); float specular=pow(max(dot(N,H),0.0),48.0); vec3 lighting=uAmbientColor+(diffuse*uLightColor*uLightIntensity); vec3 color=vColor*lighting+(specular*uLightColor*0.18); float fog=clamp(exp(-0.018*length(uCameraPosition-vWorldPosition)),0.0,1.0); vec3 fogColor=vec3(0.035,0.045,0.065); outColor=vec4(mix(fogColor,color,fog),1.0); }";
+const fragmentSource = [
+  "#version 300 es",
+  "precision highp float;",
+  "in vec3 vNormal;",
+  "in vec3 vWorldPosition;",
+  "in vec2 vUV;",
+  "in vec3 vColor;",
+  "uniform vec3 uCameraPosition;",
+  "uniform vec3 uLightDirection;",
+  "uniform vec3 uLightColor;",
+  "uniform vec3 uAmbientColor;",
+  "uniform float uLightIntensity;",
+  "uniform vec4 uBaseColorFactor;",
+  "uniform float uMetallic;",
+  "uniform float uRoughness;",
+  "uniform bool uHasTexture;",
+  "uniform sampler2D uBaseColorTexture;",
+  "out vec4 outColor;",
+  "void main(){",
+  "  vec4 texel=uHasTexture ? texture(uBaseColorTexture,vUV) : vec4(1.0);",
+  "  vec3 albedo=texel.rgb*uBaseColorFactor.rgb*vColor;",
+  "  float alpha=texel.a*uBaseColorFactor.a;",
+  "  vec3 N=normalize(vNormal);",
+  "  vec3 L=normalize(-uLightDirection);",
+  "  vec3 V=normalize(uCameraPosition-vWorldPosition);",
+  "  vec3 H=normalize(L+V);",
+  "  float diffuse=max(dot(N,L),0.0);",
+  "  float rough=max(uRoughness,0.04);",
+  "  float shininess=mix(8.0,128.0,1.0-rough);",
+  "  float specular=pow(max(dot(N,H),0.0),shininess);",
+  "  float specStrength=mix(0.04,0.35,1.0-uMetallic);",
+  "  vec3 lighting=uAmbientColor+(diffuse*uLightColor*uLightIntensity);",
+  "  vec3 color=albedo*lighting+(specular*specStrength*uLightColor);",
+  "  float fog=clamp(exp(-0.018*length(uCameraPosition-vWorldPosition)),0.0,1.0);",
+  "  vec3 fogColor=vec3(0.035,0.045,0.065);",
+  "  outColor=vec4(mix(fogColor,color,fog),alpha);",
+  "}"
+].join("\n");
 
 function compileShader(type, source) {
   const shader = gl.createShader(type);
@@ -63,7 +113,6 @@ function createProgram(vsSource, fsSource) {
 }
 
 const program = createProgram(vertexSource, fragmentSource);
-
 const loc = {
   model: gl.getUniformLocation(program, "uModel"),
   view: gl.getUniformLocation(program, "uView"),
@@ -73,7 +122,12 @@ const loc = {
   lightDirection: gl.getUniformLocation(program, "uLightDirection"),
   lightColor: gl.getUniformLocation(program, "uLightColor"),
   ambientColor: gl.getUniformLocation(program, "uAmbientColor"),
-  lightIntensity: gl.getUniformLocation(program, "uLightIntensity")
+  lightIntensity: gl.getUniformLocation(program, "uLightIntensity"),
+  baseColorFactor: gl.getUniformLocation(program, "uBaseColorFactor"),
+  metallic: gl.getUniformLocation(program, "uMetallic"),
+  roughness: gl.getUniformLocation(program, "uRoughness"),
+  hasTexture: gl.getUniformLocation(program, "uHasTexture"),
+  baseColorTexture: gl.getUniformLocation(program, "uBaseColorTexture")
 };
 
 function v3(x=0,y=0,z=0){ return [x,y,z]; }
@@ -92,12 +146,8 @@ function multiply(a,b){
     o[c*4+r]=a[r]*b[c*4]+a[4+r]*b[c*4+1]+a[8+r]*b[c*4+2]+a[12+r]*b[c*4+3];
   return o;
 }
-function translation(x,y,z){
-  const m=identity(); m[12]=x; m[13]=y; m[14]=z; return m;
-}
-function scaling(x,y,z){
-  const m=identity(); m[0]=x; m[5]=y; m[10]=z; return m;
-}
+function translation(x,y,z){ const m=identity(); m[12]=x; m[13]=y; m[14]=z; return m; }
+function scaling(x,y,z){ const m=identity(); m[0]=x; m[5]=y; m[10]=z; return m; }
 function rotationX(r){
   const c=Math.cos(r),s=Math.sin(r);
   return new Float32Array([1,0,0,0,0,c,s,0,0,-s,c,0,0,0,0,1]);
@@ -123,28 +173,17 @@ function lookAt(eye,target,up=[0,1,0]){
     -z[0]*eye[0]-z[1]*eye[1]-z[2]*eye[2],1
   ]);
 }
+
 function normalMatrix(m){
-  return new Float32Array([m[0],m[1],m[2],m[4],m[5],m[6],m[8],m[9],m[10]]);
+  const a=m[0], b=m[4], c=m[8], d=m[1], e=m[5], f=m[9], g=m[2], h=m[6], i=m[10];
+  const A=e*i-f*h, B=f*g-d*i, C=d*h-e*g;
+  const D=c*h-b*i, E=a*i-c*g, F=b*g-a*h;
+  const G=b*f-c*e, H=c*d-a*f, I=a*e-b*d;
+  const det=a*A+b*B+c*C || 1;
+  return new Float32Array([A/det,D/det,G/det,B/det,E/det,H/det,C/det,F/det,I/det]);
 }
 
-function createMesh(data, indices){
-  const vao=gl.createVertexArray();
-  const vbo=gl.createBuffer();
-  const ebo=gl.createBuffer();
-  gl.bindVertexArray(vao);
-  gl.bindBuffer(gl.ARRAY_BUFFER,vbo);
-  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(data),gl.STATIC_DRAW);
-  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,ebo);
-  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(indices),gl.STATIC_DRAW);
-  const stride=9*4;
-  gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0,3,gl.FLOAT,false,stride,0);
-  gl.enableVertexAttribArray(1); gl.vertexAttribPointer(1,3,gl.FLOAT,false,stride,12);
-  gl.enableVertexAttribArray(2); gl.vertexAttribPointer(2,3,gl.FLOAT,false,stride,24);
-  gl.bindVertexArray(null);
-  return {vao,count:indices.length};
-}
-
-function cubeMesh(){
+function cubePrimitive(){
   const faces=[
     {n:[0,0,1],c:[1,.25,.25],p:[[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]]},
     {n:[0,0,-1],c:[.25,.55,1],p:[[1,-1,-1],[-1,-1,-1],[-1,1,-1],[1,1,-1]]},
@@ -153,27 +192,63 @@ function cubeMesh(){
     {n:[0,1,0],c:[.6,.3,1],p:[[-1,1,1],[1,1,1],[1,1,-1],[-1,1,-1]]},
     {n:[0,-1,0],c:[.2,.9,.9],p:[[-1,-1,-1],[1,-1,-1],[1,-1,1],[-1,-1,1]]}
   ];
-  const data=[],idx=[];
+  const positions=[],normals=[],uvs=[],colors=[],indices=[];
   faces.forEach((f,i)=>{
     const base=i*4;
-    f.p.forEach(p=>data.push(...p,...f.n,...f.c));
-    idx.push(base,base+1,base+2,base,base+2,base+3);
+    f.p.forEach((p,j)=>{
+      positions.push(...p);
+      normals.push(...f.n);
+      uvs.push(j===1||j===2?1:0,j>=2?1:0);
+      colors.push(...f.c);
+    });
+    indices.push(base,base+1,base+2,base,base+2,base+3);
   });
-  return createMesh(data,idx);
+  return {positions,normals,uvs,colors,indices};
 }
 
-function planeMesh(size=18){
+function planePrimitive(size=18){
   const h=size/2;
-  return createMesh([
-    -h,0,-h,0,1,0,.32,.36,.42,
-     h,0,-h,0,1,0,.32,.36,.42,
-     h,0, h,0,1,0,.32,.36,.42,
-    -h,0, h,0,1,0,.32,.36,.42
-  ],[0,1,2,0,2,3]);
+  return {
+    positions:[-h,0,-h,h,0,-h,h,0,h,-h,0,h],
+    normals:[0,1,0,0,1,0,0,1,0,0,1,0],
+    uvs:[0,0,6,0,6,6,0,6],
+    colors:[.32,.36,.42,.32,.36,.42,.32,.36,.42,.32,.36,.42],
+    indices:[0,1,2,0,2,3]
+  };
 }
 
-const cube=cubeMesh();
-const plane=planeMesh();
+const checkerTexture=createTexturedCubeImage(gl);
+const demoMaterial=new Material({
+  name:"ARlun Demo Material",
+  baseColorFactor:[1,1,1,1],
+  metallic:.15,
+  roughness:.42,
+  baseColorTexture:checkerTexture
+});
+const floorMaterial=new Material({
+  name:"ARlun Ground",
+  baseColorFactor:[.55,.6,.7,1],
+  metallic:0,
+  roughness:.92
+});
+
+const cube=new GPUMesh(gl,cubePrimitive(),demoMaterial);
+const plane=new GPUMesh(gl,planePrimitive(),floorMaterial);
+
+let importedScene=null;
+let importedStatus="no external model loaded";
+
+async function tryLoadDemoGLB(){
+  try{
+    importedScene=await loadGLTF(gl,"assets/scene.glb");
+    importedStatus=importedScene.meshes.length
+      ? "GLB loaded: "+importedScene.meshes.length+" mesh primitive(s)"
+      : "GLB loaded but contains no triangle mesh";
+  }catch(error){
+    importedStatus="No assets/scene.glb yet — procedural demo active";
+  }
+}
+tryLoadDemoGLB();
 
 const camera={
   position:v3(0,2.2,7),
@@ -200,9 +275,6 @@ addEventListener("keyup",e=>keys.delete(e.code));
 canvas.addEventListener("click",()=>canvas.requestPointerLock?.());
 document.addEventListener("pointerlockchange",()=>{
   pointerLocked=document.pointerLockElement===canvas;
-  status.textContent=pointerLocked
-    ? "WebGL2 · ARlun 3D Scene · mouse captured"
-    : "WebGL2 · click the scene to capture the mouse";
 });
 document.addEventListener("mousemove",e=>{
   if(!pointerLocked) return;
@@ -235,7 +307,6 @@ function update(dt){
   if(keys.has("KeyA")) move=add(move,mul(right,-1));
   if(len(move)>0) move=norm(move);
   camera.position=add(camera.position,mul(move,dt*4.5));
-
   if(keys.has("Space")&&camera.grounded){
     camera.velocityY=6;
     camera.grounded=false;
@@ -249,11 +320,33 @@ function update(dt){
   }
 }
 
-function draw(mesh,model){
+function drawMesh(mesh,model){
+  const material=mesh.material || floorMaterial;
+  if(material.doubleSided) gl.disable(gl.CULL_FACE); else gl.enable(gl.CULL_FACE);
+
   gl.uniformMatrix4fv(loc.model,false,model);
   gl.uniformMatrix3fv(loc.normal,false,normalMatrix(model));
-  gl.bindVertexArray(mesh.vao);
-  gl.drawElements(gl.TRIANGLES,mesh.count,gl.UNSIGNED_SHORT,0);
+  gl.uniform4fv(loc.baseColorFactor,material.baseColorFactor);
+  gl.uniform1f(loc.metallic,material.metallic);
+  gl.uniform1f(loc.roughness,material.roughness);
+  gl.uniform1i(loc.hasTexture,material.baseColorTexture ? 1 : 0);
+  if(material.baseColorTexture){
+    material.baseColorTexture.bind(0);
+    gl.uniform1i(loc.baseColorTexture,0);
+  }
+  mesh.draw();
+}
+
+function drawImported(now){
+  if(!importedScene?.meshes?.length) return false;
+  importedScene.meshes.forEach((entry,index)=>{
+    const model=multiply(
+      translation(index*2.4-2.4,1.2,-5.5),
+      multiply(rotationY(now*.25),scaling(1.2,1.2,1.2))
+    );
+    drawMesh(entry.gpu,model);
+  });
+  return true;
 }
 
 function render(time){
@@ -280,13 +373,18 @@ function render(time){
   gl.uniform3fv(loc.ambientColor,[.12,.14,.18]);
   gl.uniform1f(loc.lightIntensity,1.8);
 
-  draw(plane,identity());
-  draw(cube,multiply(translation(-2,1.35,-1.5),rotationY(now*.7)));
-  draw(cube,multiply(translation(1.8,1.35,-2.4),multiply(rotationX(Math.sin(now)*.15),rotationY(-now*.56))));
-  draw(cube,multiply(translation(0,1.35,-5),multiply(rotationY(now*.4),scaling(1.5,1.5,1.5))));
+  drawMesh(plane,identity());
 
+  if(!drawImported(now)){
+    drawMesh(cube,multiply(translation(-2,1.35,-1.5),rotationY(now*.7)));
+    drawMesh(cube,multiply(translation(1.8,1.35,-2.4),multiply(rotationX(Math.sin(now)*.15),rotationY(-now*.56))));
+    drawMesh(cube,multiply(translation(0,1.35,-5),multiply(rotationY(now*.4),scaling(1.5,1.5,1.5))));
+  }
+
+  status.textContent="WebGL2 · ARlun Renderer · "+importedStatus+
+    " · WASD / mouse / Space / R";
   requestAnimationFrame(render);
 }
 
-status.textContent="WebGL2 · ARlun 3D Scene · click to capture the mouse";
+status.textContent="WebGL2 · ARlun Renderer · loading assets…";
 requestAnimationFrame(render);

@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 import re
 
-KEYWORDS = {"number", "text", "yesno", "list", "entity", "function", "print", "gvola", "true", "false"}
+KEYWORDS = {"number", "text", "yesno", "list", "entity", "function", "event", "return", "print", "gvola", "true", "false"}
 
 @dataclass(frozen=True)
 class Token:

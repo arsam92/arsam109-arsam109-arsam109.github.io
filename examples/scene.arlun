@@ -1,4 +1,4 @@
-scene Main {
-    entity player
-    entity ball
-}
+entity player
+player.gra =>> 9.8
+player.vel =>> 10
+print player.vel

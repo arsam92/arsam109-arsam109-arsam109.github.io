@@ -1,11 +1,3 @@
-# AI Core
+# ARlun AI
 
-Planned modules:
-- perception
-- memory
-- goals
-- planning
-- communication
-- voting
-- learning
-- team
+Perception -> Memory -> Think -> Goal -> Plan -> Vote/Team -> Execute -> Check -> Learn -> Rethink.

@@ -4,8 +4,3 @@ function add(a, b) {
 
 number result =>> add(7, 5)
 print result
-print 10 * 2 + 3
-
-event game_start {
-    print "ARlun game started"
-}

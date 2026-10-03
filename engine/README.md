@@ -1,10 +1,3 @@
-# Game Engine
+# ARlun Game Engine
 
-Planned modules:
-- renderer
-- physics
-- audio
-- animation
-- networking
-- scenes
-- assets
+Scene, entity, input, transform and physics foundation. Renderer, camera, materials, audio and animation come next.

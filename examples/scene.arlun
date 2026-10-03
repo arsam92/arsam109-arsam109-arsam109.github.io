@@ -1,0 +1,4 @@
+scene Main {
+    entity player
+    entity ball
+}

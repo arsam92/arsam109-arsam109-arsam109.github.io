@@ -72,7 +72,7 @@ async function parseGLB(arrayBuffer) {
   return { json, buffers: binary ? [binary] : [] };
 }
 
-function readAccessor(gltf, buffers, accessorIndex) {
+function readAccessor(gltf, buffers, accessorIndex, forceFloat = false) {
   const accessor = gltf.accessors[accessorIndex];
   if (!accessor) throw new Error("Missing accessor " + accessorIndex);
   const viewDef = gltf.bufferViews?.[accessor.bufferView];
@@ -81,20 +81,18 @@ function readAccessor(gltf, buffers, accessorIndex) {
   const itemSize = TYPE_SIZE[accessor.type];
 
   if (!component) throw new Error("Unsupported accessor component type");
-  if (!viewDef) {
-    return new component.Ctor(count * itemSize);
-  }
+  if (!viewDef) return new (forceFloat || accessor.normalized ? Float32Array : component.Ctor)(count * itemSize);
 
   const buffer = buffers[viewDef.buffer];
   const byteOffset = (viewDef.byteOffset || 0) + (accessor.byteOffset || 0);
   const stride = viewDef.byteStride || component.size * itemSize;
   const tightlyPacked = stride === component.size * itemSize;
 
-  if (tightlyPacked) {
+  if (tightlyPacked && !forceFloat && !accessor.normalized) {
     return new component.Ctor(buffer, byteOffset, count * itemSize);
   }
 
-  const out = new component.Ctor(count * itemSize);
+  const out = new Float32Array(count * itemSize);
   const source = new DataView(buffer);
   for (let i = 0; i < count; i++) {
     for (let j = 0; j < itemSize; j++) {
@@ -107,7 +105,9 @@ function readAccessor(gltf, buffers, accessorIndex) {
       else if (accessor.componentType === 5122) value = source.getInt16(at, true);
       else if (accessor.componentType === 5120) value = source.getInt8(at);
       else throw new Error("Unsupported accessor component type");
-      out[i * itemSize + j] = accessor.normalized ? normalizeComponent(value, accessor.componentType) : value;
+      out[i * itemSize + j] = accessor.normalized
+        ? normalizeComponent(value, accessor.componentType)
+        : value;
     }
   }
   return out;
@@ -330,9 +330,19 @@ export async function loadGLTF(gl, url) {
       const uv = primitiveDef.attributes.TEXCOORD_0 !== undefined
         ? asFloat32(readAccessor(gltf, buffers, primitiveDef.attributes.TEXCOORD_0))
         : new Float32Array((pos.length / 3) * 2);
-      const color = primitiveDef.attributes.COLOR_0 !== undefined
-        ? asFloat32(readAccessor(gltf, buffers, primitiveDef.attributes.COLOR_0))
-        : new Float32Array((pos.length / 3) * 4).fill(1);
+      let color = new Float32Array((pos.length / 3) * 4).fill(1);
+      if (primitiveDef.attributes.COLOR_0 !== undefined) {
+        const colorAccessorIndex = primitiveDef.attributes.COLOR_0;
+        const colorAccessor = gltf.accessors[colorAccessorIndex];
+        const rawColor = readAccessor(gltf, buffers, colorAccessorIndex, true);
+        const colorSize = TYPE_SIZE[colorAccessor.type];
+        for (let i = 0; i < colorAccessor.count; i++) {
+          color[i * 4] = rawColor[i * colorSize] ?? 1;
+          color[i * 4 + 1] = rawColor[i * colorSize + 1] ?? 1;
+          color[i * 4 + 2] = rawColor[i * colorSize + 2] ?? 1;
+          color[i * 4 + 3] = rawColor[i * colorSize + 3] ?? 1;
+        }
+      }
       const indices = primitiveDef.indices !== undefined
         ? Array.from(readAccessor(gltf, buffers, primitiveDef.indices))
         : Array.from({ length: pos.length / 3 }, (_, i) => i);

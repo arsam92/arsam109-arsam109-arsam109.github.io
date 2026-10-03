@@ -44,6 +44,8 @@ class Parser:
         if self.current.value == "print":
             self.eat("KEYWORD")
             return Print(self.expression())
+        if self.current.kind == "KEYWORD" and self.current.value in ("number", "text", "yesno"):
+            self.eat("KEYWORD")
         name = self.eat("ID").value
         self.eat("ARROW")
         return Assign(name, self.expression())

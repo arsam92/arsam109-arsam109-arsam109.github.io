@@ -240,12 +240,12 @@ let importedStatus="no external model loaded";
 
 async function tryLoadDemoGLB(){
   try{
-    importedScene=await loadGLTF(gl,"assets/scene.glb");
+    importedScene=await loadGLTF(gl,"assets/scene.gltf");
     importedStatus=importedScene.meshes.length
       ? "GLB loaded: "+importedScene.meshes.length+" mesh primitive(s)"
       : "GLB loaded but contains no triangle mesh";
   }catch(error){
-    importedStatus="No assets/scene.glb yet — procedural demo active";
+    importedStatus="No external model loaded — procedural demo active";
   }
 }
 tryLoadDemoGLB();

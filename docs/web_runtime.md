@@ -1,37 +1,77 @@
 # ARlun Web Runtime
 
-Open `index.html` through GitHub Pages to launch the first browser-based ARlun 3D scene.
+The repository now has a browser-facing ARlun runtime at `index.html`.
 
-The page uses a native WebGL2 context without an external rendering library. The first renderer currently provides:
+## What the browser renders
 
-- GPU vertex and fragment shaders.
-- Depth buffering and back-face culling.
-- Perspective camera.
-- Directional diffuse and specular lighting.
-- A 3D ground plane and three animated cube entities.
-- WASD movement, mouse look, jump, and camera reset.
-- Responsive canvas resolution with a device-pixel-ratio cap.
+The runtime uses native WebGL2. There is no Three.js dependency.
+
+The current pipeline is:
+
+```text
+index.html
+   ↓
+web/arlun-webgl.js
+   ↓
+WebGL2 shaders + GPU buffers
+   ↓
+web/arlun-assets.js
+   ↓
+GLTF / GLB → Mesh + Material + Texture2D
+   ↓
+GPU draw calls
+```
+
+The renderer includes a depth buffer, perspective camera, directional lighting, diffuse/specular response, textured materials, metallic/roughness controls, and back-face culling.
+
+## Asset loading
+
+`web/arlun-assets.js` contains:
+
+- `Texture2D` — uploads image data to a WebGL texture and configures filtering/wrapping.
+- `Material` — stores base color, metallic, roughness, texture and double-sided state.
+- `GPUMesh` — creates VAO/VBO/EBO resources and issues indexed triangle draws.
+- `loadGLTF()` — loads `.gltf` or `.glb`, reads accessors/buffer views, decodes images and creates GPU meshes/materials.
+
+The bundled `assets/scene.gltf` is a self-contained textured cube test asset. Its geometry and PNG texture are embedded as data URIs, so it works without an additional asset server.
+
+## Add a real model
+
+Place a model in `assets/` and change the URL in `web/arlun-webgl.js`:
+
+```js
+loadGLTF(gl, "assets/player.glb")
+```
+
+GLB is recommended for shipping because it can package the scene data into one file.
+
+The current loader focuses on triangle primitives and the common PBR fields:
+`baseColorTexture`, `baseColorFactor`, `metallicFactor`, and `roughnessFactor`.
 
 ## GitHub Pages
 
-In the repository settings, enable **Pages** for the `main` branch and the repository root. GitHub will publish `index.html` as the site entry point.
+Enable Pages for the `main` branch and repository root. The project-site URL for this repository is:
 
-The generated URL follows the normal GitHub Pages project-site pattern:
-
-    https://<owner>.github.io/<repository>/
-
-For this repository that is:
-
-    https://arsam92.github.io/arsam109-arsam109-arsam109.github.io/
+```text
+https://arsam92.github.io/arsam109-arsam109-arsam109.github.io/
+```
 
 ## Local development
 
-Run a local HTTP server from the repository root:
+From the repository root:
 
-    python -m http.server 8000
+```bash
+python -m http.server 8000
+```
 
 Then open:
 
-    http://localhost:8000/
+```text
+http://localhost:8000/
+```
 
 A browser with WebGL2 support is required.
+
+## Next renderer milestones
+
+The next major steps are node hierarchy transforms, normal/metallic-roughness maps, multiple light types, real shadow-map passes, skinning/animation, and an in-browser 3D editor.

@@ -1,0 +1,3 @@
+// First ARlun example
+text greeting =>> "Hello from ARlun"
+print greeting

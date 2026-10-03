@@ -1,3 +1,4 @@
-// First ARlun example
 text greeting =>> "Hello from ARlun"
+number speed =>> 10
 print greeting
+print speed

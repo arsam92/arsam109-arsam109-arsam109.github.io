@@ -238,17 +238,19 @@ const plane=new GPUMesh(gl,planePrimitive(),floorMaterial);
 let importedScene=null;
 let importedStatus="no external model loaded";
 
-async function tryLoadDemoGLB(){
+async function tryLoadDemoGLTF(){
   try{
     importedScene=await loadGLTF(gl,"assets/scene.gltf");
-    importedStatus=importedScene.meshes.length
-      ? "GLB loaded: "+importedScene.meshes.length+" mesh primitive(s)"
-      : "GLB loaded but contains no triangle mesh";
+    importedStatus=importedScene.instances.length
+      ? "GLTF loaded: "+importedScene.instances.length+" scene instance(s)"
+      : "GLTF loaded but contains no visible mesh instance";
   }catch(error){
+    console.warn("ARlun asset loader:", error);
+    importedScene=null;
     importedStatus="No external model loaded — procedural demo active";
   }
 }
-tryLoadDemoGLB();
+tryLoadDemoGLTF();
 
 const camera={
   position:v3(0,2.2,7),
@@ -338,13 +340,10 @@ function drawMesh(mesh,model){
 }
 
 function drawImported(now){
-  if(!importedScene?.meshes?.length) return false;
-  importedScene.meshes.forEach((entry,index)=>{
-    const model=multiply(
-      translation(index*2.4-2.4,1.2,-5.5),
-      multiply(rotationY(now*.25),scaling(1.2,1.2,1.2))
-    );
-    drawMesh(entry.gpu,model);
+  if(!importedScene?.instances?.length) return false;
+  importedScene.instances.forEach((instance)=>{
+    const model=multiply(instance.matrix, rotationY(now*.25));
+    drawMesh(instance.mesh.gpu,model);
   });
   return true;
 }

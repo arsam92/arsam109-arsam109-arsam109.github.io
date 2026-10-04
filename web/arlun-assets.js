@@ -432,6 +432,7 @@ export async function loadGLTF(gl, url) {
 
   return {
     meshes,
+    instances,
     materials,
     destroy() {
       meshes.forEach(m => m.gpu.destroy());

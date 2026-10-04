@@ -49,6 +49,9 @@ async function parseGLB(arrayBuffer) {
   if (version !== 2) throw new Error("Unsupported GLB version: " + version);
 
   const length = view.getUint32(8, true);
+  if (length > arrayBuffer.byteLength || length < 12) {
+    throw new Error("Invalid GLB declared length");
+  }
   let offset = 12;
   let json = null;
   let binary = null;
@@ -320,8 +323,10 @@ export async function loadGLTF(gl, url) {
   if (!materials.length) materials.push(new Material());
 
   const meshes = [];
-  for (const meshDef of gltf.meshes || []) {
-    for (const primitiveDef of meshDef.primitives || []) {
+  for (let meshIndex = 0; meshIndex < (gltf.meshes || []).length; meshIndex++) {
+    const meshDef = gltf.meshes[meshIndex];
+    for (let primitiveIndex = 0; primitiveIndex < (meshDef.primitives || []).length; primitiveIndex++) {
+      const primitiveDef = meshDef.primitives[primitiveIndex];
       if ((primitiveDef.mode ?? 4) !== 4) continue;
       const pos = asFloat32(readAccessor(gltf, buffers, primitiveDef.attributes.POSITION));
       const normal = primitiveDef.attributes.NORMAL !== undefined
@@ -353,11 +358,77 @@ export async function loadGLTF(gl, url) {
       const material = materials[primitiveDef.material ?? 0] || materials[0];
       meshes.push({
         name: meshDef.name || "mesh-" + meshes.length,
+        meshIndex,
+        primitiveIndex,
         gpu: new GPUMesh(gl, { positions: pos, normals: normal, uvs: uv, colors: color, indices }, material),
         material
       });
     }
   }
+
+  const meshEntriesByIndex = new Map();
+  for (const entry of meshes) {
+    if (!meshEntriesByIndex.has(entry.meshIndex)) meshEntriesByIndex.set(entry.meshIndex, []);
+    meshEntriesByIndex.get(entry.meshIndex).push(entry);
+  }
+
+  function mat4Identity() {
+    return [1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1];
+  }
+  function mat4Multiply(a, b) {
+    const out = new Array(16);
+    for (let c = 0; c < 4; c++) {
+      for (let r = 0; r < 4; r++) {
+        out[c * 4 + r] =
+          a[r] * b[c * 4] +
+          a[4 + r] * b[c * 4 + 1] +
+          a[8 + r] * b[c * 4 + 2] +
+          a[12 + r] * b[c * 4 + 3];
+      }
+    }
+    return out;
+  }
+  function nodeLocalMatrix(node) {
+    if (node.matrix) return [...node.matrix];
+    const t = node.translation || [0,0,0];
+    const s = node.scale || [1,1,1];
+    const q = node.rotation || [0,0,0,1];
+    const [x,y,z,w] = q;
+    const x2=x+x, y2=y+y, z2=z+z;
+    const xx=x*x2, xy=x*y2, xz=x*z2;
+    const yy=y*y2, yz=y*z2, zz=z*z2;
+    const wx=w*x2, wy=w*y2, wz=w*z2;
+    return [
+      (1-(yy+zz))*s[0], (xy+wz)*s[0], (xz-wy)*s[0], 0,
+      (xy-wz)*s[1], (1-(xx+zz))*s[1], (yz+wx)*s[1], 0,
+      (xz+wy)*s[2], (yz-wx)*s[2], (1-(xx+yy))*s[2], 0,
+      t[0], t[1], t[2], 1
+    ];
+  }
+
+  const nodeWorldMatrices = new Array((gltf.nodes || []).length);
+  const instances = [];
+  const visiting = new Set();
+
+  function visitNode(nodeIndex, parentWorld) {
+    if (visiting.has(nodeIndex)) throw new Error("Cycle detected in glTF node hierarchy");
+    const node = gltf.nodes?.[nodeIndex];
+    if (!node) throw new Error("Missing glTF node " + nodeIndex);
+    visiting.add(nodeIndex);
+    const world = mat4Multiply(parentWorld, nodeLocalMatrix(node));
+    nodeWorldMatrices[nodeIndex] = world;
+    if (node.mesh !== undefined) {
+      for (const entry of meshEntriesByIndex.get(node.mesh) || []) {
+        instances.push({ mesh: entry, matrix: world });
+      }
+    }
+    for (const child of node.children || []) visitNode(child, world);
+    visiting.delete(nodeIndex);
+  }
+
+  const defaultScene = gltf.scenes?.[gltf.scene ?? 0];
+  const roots = defaultScene?.nodes || [];
+  roots.forEach(index => visitNode(index, mat4Identity()));
 
   return {
     meshes,
